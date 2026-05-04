@@ -24,8 +24,8 @@ Screenshots are saved to `SM2_Results/<YYYY-MM-DD_HH-MM-SS>/`.
 ## Installation & usage
 
 ```bash
-git clone https://github.com/mcace333/AAR-App.git
-cd AAR-App
+git clone https://github.com/mcace333/sm2-tool.git
+cd sm2-tool
 ./run.sh
 ```
 
