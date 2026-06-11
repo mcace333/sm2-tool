@@ -52,3 +52,19 @@ All tuneable values are at the top of `sm2_tool.py`:
 **Operation** — fills in Mission, Difficulty, Geneseed, Armorydata, and an optional Challenge name.
 
 **Siege** — fills in Mission type (Normal / Hard), Waves survived, and an optional Challenge name.
+
+## Windows build (.exe)
+
+A standalone `sm2_tool.exe` can be built on Windows using the files in the `Windows/` folder.
+
+Requirements:
+- Python 3.10+ from [python.org](https://www.python.org/downloads/) — during installation, tick **"Add Python to PATH"**.
+
+Build:
+
+```cmd
+cd Windows
+build.bat
+```
+
+`build.bat` installs the dependencies (`mss`, `pynput`, `Pillow`, `pyinstaller`) and runs PyInstaller. The finished binary is written to `Windows\dist\sm2_tool.exe` and can be run directly — no Python installation required on the target machine.
