@@ -34,8 +34,8 @@ OUTPUT_DIR       = "SM2_Results"
 # Dropdown options
 # ---------------------------------------------------------------------------
 MISSIONS = [
-    "INFERNO", "DECAPITATION", "VOX LIBERATIS", "RELIQUARY",
-    "FALL OF ATREUS", "BALLISTIC ENGINE", "OBELISK", "EXFILTRATION", "GILDED FATE", "EXTRACTION", "DISRUPTION"
+    "INFERNO", "DECAPITATION", "VOX LIBERATIS", "RELIQUARY", "TERMINATION", "VORTEX",
+    "FALL OF ATREUS", "BALLISTIC ENGINE", "OBELISK", "EXFILTRATION", "RECLAMATION", "GILDED FATE", "EXTRACTION", "DISRUPTION", "PURGATION"
 ]
 DIFFICULTIES = [
     "MINIMAL", "AVERAGE", "SUBSTANTIAL", "RUTHLESS", "LETHAL", "ABSOLUTE",
@@ -233,7 +233,7 @@ def generate_siege_text(mission: str, waves: str, challenge: str = "") -> str:
     if challenge.strip():
         lines.append(f"Challenge: {challenge.strip()}")
     lines += [
-        f"Mission: {mission.title()}",
+        f"Mission: {mission.title()} Siege",
         f"Waves: {waves}",
         "Brothers: ",
     ]
