@@ -1,6 +1,6 @@
 # SM2 Screenshot & Discord-Logger Tool
 
-**Version 1.1**
+**Version 1.11**
 
 A hotkey-driven tool for **Space Marine 2** that captures the end-of-mission
 screens, reads the relevant data via OCR, and generates a ready-to-paste Discord
@@ -16,7 +16,7 @@ post — including player names in `@discord` format.
 3. The screenshots are analyzed automatically (OCR):
    - **Gene-Seed** retrieved? (from the Victory screen)
    - **Mode** (Operation / Siege), **Map** (Operations), **Waves** survived (Siege)
-   - per player: **name** + **class**, and the **chip** value from the Rewards screen
+   - per player: **name** + **class**
 4. Player names differ between game and Discord, so the first time an unknown
    in-game name appears a small popup asks for the matching Discord name (e.g.
    in-game `McAce` → Discord `Techmarine Ace`). The mapping is stored in
@@ -33,7 +33,6 @@ Difficulty: Lethal
 Geneseed: Retrieved
 Armorydata: 3
 Brothers: @Techmarine Ace, @AboutZero, @EarthWindFire
-Chips: Techmarine Ace: 3
 ```
 
 Screenshots are saved to `SM2_Results/<YYYY-MM-DD_HH-MM-SS>/`.
@@ -47,7 +46,6 @@ Screenshots are saved to `SM2_Results/<YYYY-MM-DD_HH-MM-SS>/`.
 | Waves survived (Siege) | Challenge name |
 | Gene-Seed status | |
 | Brothers (`@discord`) | |
-| Chip value(s) | |
 
 > The in-game player name is only an OCR *suggestion* (stylized font) — you
 > confirm/correct it in the popup, and the Discord name is what gets stored.

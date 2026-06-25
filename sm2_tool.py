@@ -6,7 +6,7 @@ reads mode/map/gene-seed/players/chips via OCR, and pre-fills a GUI that copies
 a ready-to-paste Discord post (with players as @discord) to the clipboard.
 """
 
-__version__ = "1.1"
+__version__ = "1.11"
 
 import os
 import queue
@@ -254,15 +254,9 @@ def run_screenshot_sequence(env: dict, base_path: Path) -> list[Path]:
 
 
 def _brothers_lines(autofill: dict | None) -> list[str]:
-    """Brothers- und Chips-Zeilen aus den automatisch ausgelesenen Daten."""
-    lines = []
+    """Brothers-Zeile aus den automatisch ausgelesenen Daten."""
     brothers = (autofill or {}).get("brothers") or []
-    lines.append("Brothers: " + ", ".join(brothers) if brothers else "Brothers: ")
-    chips = (autofill or {}).get("chips") or []
-    chip_parts = [f"{name}: {val}" for name, val in chips if val not in (None, "")]
-    if chip_parts:
-        lines.append("Chips: " + ", ".join(chip_parts))
-    return lines
+    return ["Brothers: " + ", ".join(brothers) if brothers else "Brothers: "]
 
 
 def generate_result_text(mission: str, difficulty: str, geneseed: str, armorydata: str, challenge: str = "", autofill: dict | None = None) -> str:
@@ -428,13 +422,10 @@ def open_results_gui(parent: tk.Tk, screenshot_paths: list[Path], autofill: dict
     _set_if_known(vars_op["mission"], autofill.get("mission", ""), MISSIONS)
     _set_if_known(vars_op["geneseed"], autofill.get("geneseed", ""), GENESEED)
 
-    # Info-Zeile: erkannte Brothers/Chips zur Kontrolle anzeigen.
+    # Info-Zeile: erkannte Brothers zur Kontrolle anzeigen.
     info_bits = []
     if autofill.get("brothers"):
         info_bits.append("Brothers: " + ", ".join(autofill["brothers"]))
-    if autofill.get("chips"):
-        info_bits.append("Chips: " + ", ".join(
-            f"{n}:{v}" for n, v in autofill["chips"] if v not in (None, "")))
     if info_bits:
         ttk.Label(outer, text="  |  ".join(info_bits), foreground="#555",
                   wraplength=360, justify="left").grid(
