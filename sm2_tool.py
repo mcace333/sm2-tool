@@ -6,7 +6,7 @@ reads mode/map/gene-seed/players/chips via OCR, and pre-fills a GUI that copies
 a ready-to-paste Discord post (with players as @discord) to the clipboard.
 """
 
-__version__ = "1.11"
+__version__ = "1.12"
 
 import os
 import queue
@@ -42,6 +42,7 @@ _PLAYER_MAP = None    # sm2_ocr.PlayerMap (In-Game -> Discord)
 CAPTURE_SCALE    = 1.0     # Fraction of screen to capture (centered)
 TAB_SWITCH_PAUSE = 4.0     # Pause between tab switch and next screenshot (sec)
 INITIAL_PAUSE    = 2.0     # Pause before the first screenshot
+REWARD_ENTER_PAUSE = 3.0   # Pause before the second Enter (stats -> rewards)
 INITIAL_KEY      = "Return"  # Key pressed once at the start (open screen)
 TAB_KEY          = "e"       # Key for switching tabs between screenshots
 HOTKEYS          = ["Home", "End", "F7"]  # Keys that trigger the screenshot sequence
@@ -246,6 +247,7 @@ def run_screenshot_sequence(env: dict, base_path: Path) -> list[Path]:
 
     # 3) Enter -> Rewards-Screens (5. Screen ff.)
     if N_REWARD_SCREENS > 0:
+        time.sleep(REWARD_ENTER_PAUSE)   # vor dem letzten Enter warten
         simulate_key(env, INITIAL_KEY, window_id)
         time.sleep(TAB_SWITCH_PAUSE)
         cycle(N_REWARD_SCREENS)

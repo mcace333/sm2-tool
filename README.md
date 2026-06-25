@@ -1,6 +1,6 @@
 # SM2 Screenshot & Discord-Logger Tool
 
-**Version 1.11**
+**Version 1.12**
 
 A hotkey-driven tool for **Space Marine 2** that captures the end-of-mission
 screens, reads the relevant data via OCR, and generates a ready-to-paste Discord
@@ -95,6 +95,7 @@ All tuneable values are at the top of `sm2_tool.py`:
 | `N_REWARD_SCREENS` | `1` | Rewards screens captured after the second `Enter` (set to `3` to capture all players' chips) |
 | `INITIAL_PAUSE` | `2.0` s | Delay before the first screenshot |
 | `TAB_SWITCH_PAUSE` | `4.0` s | Delay between tab switch and next screenshot |
+| `REWARD_ENTER_PAUSE` | `3.0` s | Delay before the second `Enter` (stats → rewards) |
 | `CAPTURE_SCALE` | `1.0` | Fraction of the screen captured (1.0 = full screen) |
 | `OUTPUT_DIR` | `"SM2_Results"` | Folder where screenshots are saved |
 
