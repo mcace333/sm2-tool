@@ -6,12 +6,13 @@ reads mode/map/gene-seed/players/chips via OCR, and pre-fills a GUI that copies
 a ready-to-paste Discord post (with players as @discord) to the clipboard.
 """
 
-__version__ = "1.12"
+__version__ = "1.13"
 
 import os
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime
@@ -43,6 +44,7 @@ CAPTURE_SCALE    = 1.0     # Fraction of screen to capture (centered)
 TAB_SWITCH_PAUSE = 4.0     # Pause between tab switch and next screenshot (sec)
 INITIAL_PAUSE    = 2.0     # Pause before the first screenshot
 REWARD_ENTER_PAUSE = 3.0   # Pause before the second Enter (stats -> rewards)
+REWARD_SHOT_PAUSE  = 3.0   # Pause after the second Enter, before the rewards shot
 INITIAL_KEY      = "Return"  # Key pressed once at the start (open screen)
 TAB_KEY          = "e"       # Key for switching tabs between screenshots
 HOTKEYS          = ["Home", "End", "F7"]  # Keys that trigger the screenshot sequence
@@ -247,9 +249,9 @@ def run_screenshot_sequence(env: dict, base_path: Path) -> list[Path]:
 
     # 3) Enter -> Rewards-Screens (5. Screen ff.)
     if N_REWARD_SCREENS > 0:
-        time.sleep(REWARD_ENTER_PAUSE)   # vor dem letzten Enter warten
+        time.sleep(REWARD_ENTER_PAUSE)   # vor dem zweiten Enter warten
         simulate_key(env, INITIAL_KEY, window_id)
-        time.sleep(TAB_SWITCH_PAUSE)
+        time.sleep(REWARD_SHOT_PAUSE)    # nach dem Enter warten, bis Rewards da ist
         cycle(N_REWARD_SCREENS)
 
     return paths
@@ -534,6 +536,12 @@ def warmup_permissions(env: dict) -> None:
 
 def main() -> None:
     base_path = Path(__file__).parent.resolve()
+
+    # Logs sofort ausgeben (sonst hängt z. B. "Results ready" im Puffer fest).
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
 
     print("SM2 Screenshot & Discord-Logger Tool")
     print("=====================================")

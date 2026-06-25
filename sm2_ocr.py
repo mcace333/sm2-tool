@@ -302,11 +302,16 @@ class PlayerMap:
         self.path.write_text(json.dumps(self.map, indent=2, ensure_ascii=False))
 
     def closest(self, ingame: str) -> str | None:
-        """Bekannten In-Game-Namen per Fuzzy-Match finden (gegen OCR-Schwankung)."""
+        """Bekannten In-Game-Namen per Fuzzy-Match finden (gegen OCR-Schwankung,
+        case-unabhängig)."""
         if ingame in self.map:
             return ingame
-        m = difflib.get_close_matches(ingame, list(self.map), n=1, cutoff=0.7)
-        return m[0] if m else None
+        low = {k.casefold(): k for k in self.map}
+        key = ingame.casefold()
+        if key in low:
+            return low[key]
+        m = difflib.get_close_matches(key, list(low), n=1, cutoff=0.7)
+        return low[m[0]] if m else None
 
     def resolve(self, pl: PlayerData, parent=None) -> str:
         """Discord-Namen liefern; unbekannte Namen per Popup abfragen."""
@@ -335,6 +340,17 @@ def ask_discord_name(pl: PlayerData, known: list[tuple[str, str]],
     owns_root = parent is None
     root = tk.Tk() if owns_root else tk.Toplevel(parent)
     root.title("Spieler zuordnen")
+    # Vor das (Vollbild-)Spiel zwingen – sonst öffnet das Popup im Hintergrund
+    # und das Tool scheint zu hängen, weil es auf die Eingabe wartet.
+    print(f"→ Popup: Discord-Name für In-Game '{pl.ingame_name}' eingeben "
+          f"(ggf. Alt-Tab).", flush=True)
+    try:
+        root.attributes("-topmost", True)
+        root.lift()
+        root.focus_force()
+        root.after(50, root.focus_force)
+    except Exception:
+        pass
     frm = ttk.Frame(root, padding=14)
     frm.grid(sticky="nsew")
 

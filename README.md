@@ -1,6 +1,6 @@
 # SM2 Screenshot & Discord-Logger Tool
 
-**Version 1.12**
+**Version 1.13**
 
 A hotkey-driven tool for **Space Marine 2** that captures the end-of-mission
 screens, reads the relevant data via OCR, and generates a ready-to-paste Discord
