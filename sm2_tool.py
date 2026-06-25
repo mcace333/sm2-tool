@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
 SM2 Screenshot & Discord-Logger Tool
-Waits for a global hotkey (Home/End), takes 4 screenshots of the battle results screen,
-opens a GUI for data entry, and copies formatted text to the clipboard.
+Waits for a global hotkey (Home/End/F7), captures the end-of-mission screens,
+reads mode/map/gene-seed/players/chips via OCR, and pre-fills a GUI that copies
+a ready-to-paste Discord post (with players as @discord) to the clipboard.
 """
+
+__version__ = "1.1"
 
 import os
 import queue
@@ -19,6 +22,20 @@ from tkinter import ttk
 from Xlib import X, XK
 from Xlib import display as xdisplay
 
+# Optionale OCR-Auswertung (Namen/Klasse/Victory/Chips -> Autofill).
+try:
+    import sm2_ocr
+    from sm2_analyze import ChipDetector
+    _OCR_AVAILABLE = True
+except Exception as _ocr_exc:  # numpy/Pillow/pytesseract/tesseract fehlt
+    sm2_ocr = None
+    ChipDetector = None
+    _OCR_AVAILABLE = False
+    print(f"[WARN] OCR-Auswertung nicht verfügbar: {_ocr_exc}")
+
+_CHIP_DET = None      # ChipDetector (lazy, in main initialisiert)
+_PLAYER_MAP = None    # sm2_ocr.PlayerMap (In-Game -> Discord)
+
 # ---------------------------------------------------------------------------
 # Configuration (easy to adjust)
 # ---------------------------------------------------------------------------
@@ -29,6 +46,15 @@ INITIAL_KEY      = "Return"  # Key pressed once at the start (open screen)
 TAB_KEY          = "e"       # Key for switching tabs between screenshots
 HOTKEYS          = ["Home", "End", "F7"]  # Keys that trigger the screenshot sequence
 OUTPUT_DIR       = "SM2_Results"
+
+# Capture-Sequenz (insgesamt 1 + N_STAT_SCREENS + N_REWARD_SCREENS Screenshots):
+#   1 Victory-Screen
+#   -> INITIAL_KEY (Enter) -> N_STAT_SCREENS Spieler-Stat-Screens (mit TAB_KEY)
+#   -> INITIAL_KEY (Enter) -> N_REWARD_SCREENS Rewards-Screen(s) (mit TAB_KEY)
+# Default 3 Stats + 1 Rewards = 5 Screenshots. Auf N_REWARD_SCREENS=3 erhöhen,
+# falls die Chips aller 3 Spieler erfasst werden sollen (Rewards mit "e" blättern).
+N_STAT_SCREENS   = 3
+N_REWARD_SCREENS = 1
 
 # ---------------------------------------------------------------------------
 # Dropdown options
@@ -192,29 +218,54 @@ def run_screenshot_sequence(env: dict, base_path: Path) -> list[Path]:
 
     time.sleep(INITIAL_PAUSE)
 
-    # Screenshot 1 before pressing Enter
-    output_path = session_dir / "screenshot_1.png"
-    take_screenshot(output_path, region, env)
-    print(f"Screenshot 1 saved: {output_path}")
-    paths.append(output_path)
+    idx = 1
 
+    def shot():
+        nonlocal idx
+        p = session_dir / f"screenshot_{idx}.png"
+        take_screenshot(p, region, env)
+        print(f"Screenshot {idx} saved: {p}")
+        paths.append(p)
+        idx += 1
+
+    def cycle(n):
+        """n Screens aufnehmen, dazwischen TAB_KEY drücken."""
+        for j in range(n):
+            shot()
+            if j < n - 1:
+                simulate_key(env, TAB_KEY, window_id)
+                time.sleep(TAB_SWITCH_PAUSE)
+
+    # 1) Victory-Screen (vor dem ersten Enter)
+    shot()
+
+    # 2) Enter -> Spieler-Stat-Screens
     simulate_key(env, INITIAL_KEY, window_id)
     time.sleep(TAB_SWITCH_PAUSE)
+    cycle(N_STAT_SCREENS)
 
-    for i in range(2, 5):
-        output_path = session_dir / f"screenshot_{i}.png"
-        take_screenshot(output_path, region, env)
-        print(f"Screenshot {i} saved: {output_path}")
-        paths.append(output_path)
-
-        if i < 4:
-            simulate_key(env, TAB_KEY, window_id)
-            time.sleep(TAB_SWITCH_PAUSE)
+    # 3) Enter -> Rewards-Screens (5. Screen ff.)
+    if N_REWARD_SCREENS > 0:
+        simulate_key(env, INITIAL_KEY, window_id)
+        time.sleep(TAB_SWITCH_PAUSE)
+        cycle(N_REWARD_SCREENS)
 
     return paths
 
 
-def generate_result_text(mission: str, difficulty: str, geneseed: str, armorydata: str, challenge: str = "") -> str:
+def _brothers_lines(autofill: dict | None) -> list[str]:
+    """Brothers- und Chips-Zeilen aus den automatisch ausgelesenen Daten."""
+    lines = []
+    brothers = (autofill or {}).get("brothers") or []
+    lines.append("Brothers: " + ", ".join(brothers) if brothers else "Brothers: ")
+    chips = (autofill or {}).get("chips") or []
+    chip_parts = [f"{name}: {val}" for name, val in chips if val not in (None, "")]
+    if chip_parts:
+        lines.append("Chips: " + ", ".join(chip_parts))
+    return lines
+
+
+def generate_result_text(mission: str, difficulty: str, geneseed: str, armorydata: str, challenge: str = "", autofill: dict | None = None) -> str:
     lines = []
     if challenge.strip():
         lines.append(f"Challenge: {challenge.strip()}")
@@ -223,29 +274,30 @@ def generate_result_text(mission: str, difficulty: str, geneseed: str, armorydat
         f"Difficulty: {difficulty.title()}",
         f"Geneseed: {geneseed.title()}",
         f"Armorydata: {armorydata}",
-        "Brothers: ",
     ]
+    lines += _brothers_lines(autofill)
     return "\n".join(lines)
 
 
-def generate_siege_text(mission: str, waves: str, challenge: str = "") -> str:
+def generate_siege_text(mission: str, waves: str, challenge: str = "", autofill: dict | None = None) -> str:
     lines = []
     if challenge.strip():
         lines.append(f"Challenge: {challenge.strip()}")
     lines += [
         f"Mission: {mission.title()} Siege",
         f"Waves: {waves}",
-        "Brothers: ",
     ]
+    lines += _brothers_lines(autofill)
     return "\n".join(lines)
 
 
-def on_copy_button(win: tk.Toplevel, mode_var: tk.StringVar, vars_op: dict, vars_siege: dict, status_label: tk.Label, parent: tk.Tk) -> None:
+def on_copy_button(win: tk.Toplevel, mode_var: tk.StringVar, vars_op: dict, vars_siege: dict, status_label: tk.Label, parent: tk.Tk, autofill: dict | None = None) -> None:
     if mode_var.get() == "SIEGE":
         text = generate_siege_text(
             mission   = vars_siege["mission"].get(),
             waves     = vars_siege["waves"].get(),
             challenge = vars_siege["challenge"].get(),
+            autofill  = autofill,
         )
     else:
         text = generate_result_text(
@@ -254,6 +306,7 @@ def on_copy_button(win: tk.Toplevel, mode_var: tk.StringVar, vars_op: dict, vars
             geneseed   = vars_op["geneseed"].get(),
             armorydata = vars_op["armorydata"].get(),
             challenge  = vars_op["challenge"].get(),
+            autofill   = autofill,
         )
     win.clipboard_clear()
     win.clipboard_append(text)
@@ -264,7 +317,36 @@ def on_copy_button(win: tk.Toplevel, mode_var: tk.StringVar, vars_op: dict, vars
     parent.after(700, parent.quit)
 
 
-def open_results_gui(parent: tk.Tk, screenshot_paths: list[Path]) -> None:
+def analyze_session(session_dir: Path | None) -> object | None:
+    """OCR-Auswertung des Session-Ordners (im Hintergrund-Thread aufgerufen).
+    Liefert sm2_ocr.MatchData oder None."""
+    if not (_OCR_AVAILABLE and _CHIP_DET and session_dir):
+        return None
+    try:
+        return sm2_ocr.analyze_match(session_dir, _CHIP_DET)
+    except Exception as exc:
+        print(f"[WARN] OCR-Auswertung fehlgeschlagen: {exc}")
+        return None
+
+
+def build_autofill_with_names(md, parent: tk.Tk) -> dict:
+    """Spielernamen -> Discord auflösen (Popups im Main-Thread) und Autofill
+    erzeugen."""
+    if md is None:
+        return {}
+    if _PLAYER_MAP is not None:
+        for pl in md.players:
+            try:
+                _PLAYER_MAP.resolve(pl, parent=parent)
+            except Exception as exc:
+                print(f"[WARN] Namens-Mapping fehlgeschlagen: {exc}")
+    for w in getattr(md, "warnings", []):
+        print(f"[WARN] {w}")
+    return sm2_ocr.build_autofill(md)
+
+
+def open_results_gui(parent: tk.Tk, screenshot_paths: list[Path], autofill: dict | None = None) -> None:
+    autofill = autofill or {}
     win = tk.Toplevel(parent)
     win.title("SM2 Mission Results")
     win.resizable(False, False)
@@ -333,13 +415,38 @@ def open_results_gui(parent: tk.Tk, screenshot_paths: list[Path]) -> None:
 
     mode_var.trace_add("write", on_mode_change)
 
+    # --- Automatisch ausgelesene Werte vorbelegen -------------------------
+    def _set_if_known(var, value, options):
+        if value and value in options:
+            var.set(value)
+    if autofill.get("mode") == "siege":
+        mode_var.set("SIEGE")
+        if autofill.get("wave"):
+            _set_if_known(vars_siege["waves"], autofill["wave"], WAVES)
+    elif autofill.get("mode") == "operation":
+        mode_var.set("OPERATION")
+    _set_if_known(vars_op["mission"], autofill.get("mission", ""), MISSIONS)
+    _set_if_known(vars_op["geneseed"], autofill.get("geneseed", ""), GENESEED)
+
+    # Info-Zeile: erkannte Brothers/Chips zur Kontrolle anzeigen.
+    info_bits = []
+    if autofill.get("brothers"):
+        info_bits.append("Brothers: " + ", ".join(autofill["brothers"]))
+    if autofill.get("chips"):
+        info_bits.append("Chips: " + ", ".join(
+            f"{n}:{v}" for n, v in autofill["chips"] if v not in (None, "")))
+    if info_bits:
+        ttk.Label(outer, text="  |  ".join(info_bits), foreground="#555",
+                  wraplength=360, justify="left").grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
     status_label = ttk.Label(outer, text="", foreground="green")
     status_label.grid(row=4, column=0, columnspan=2, pady=(4, 0))
 
     ttk.Button(
         outer,
         text="Generate & copy text",
-        command=lambda: on_copy_button(win, mode_var, vars_op, vars_siege, status_label, parent),
+        command=lambda: on_copy_button(win, mode_var, vars_op, vars_siege, status_label, parent, autofill),
     ).grid(row=3, column=0, columnspan=2, pady=(12, 4), sticky="ew")
 
     parent.wait_window(win)
@@ -380,7 +487,11 @@ def start_hotkey_listener(env: dict, base_path: Path, gui_queue: queue.Queue):
                     try:
                         gui_queue.put("Taking screenshots...")
                         paths = run_screenshot_sequence(env, base_path)
-                        gui_queue.put(paths)
+                        session_dir = paths[0].parent if paths else None
+                        if _OCR_AVAILABLE:
+                            gui_queue.put("Analyzing screens (OCR)...")
+                        md = analyze_session(session_dir)
+                        gui_queue.put(("results", session_dir, md))
                     except Exception as exc:
                         print(f"[ERROR] Screenshot sequence failed: {exc}")
                         gui_queue.put("Error – see terminal.")
@@ -436,6 +547,20 @@ def main() -> None:
 
     env = check_environment()
 
+    # OCR-Auswertung initialisieren (ChipDetector + Spieler-Mapping).
+    global _CHIP_DET, _PLAYER_MAP
+    if _OCR_AVAILABLE:
+        tpl = base_path / "assets" / "chip_template.png"
+        if tpl.exists():
+            try:
+                _CHIP_DET = ChipDetector(tpl)
+                _PLAYER_MAP = sm2_ocr.PlayerMap(base_path / sm2_ocr.PLAYERS_FILE)
+                print("[INFO] OCR-Auswertung aktiv (Autofill).")
+            except Exception as exc:
+                print(f"[WARN] OCR-Init fehlgeschlagen: {exc}")
+        else:
+            print(f"[WARN] Chip-Template fehlt: {tpl} – OCR-Autofill deaktiviert.")
+
     root = tk.Tk()
     root.withdraw()
 
@@ -451,7 +576,14 @@ def main() -> None:
             item = gui_queue.get_nowait()
             if isinstance(item, str):
                 print(f"[INFO] {item}")
-            else:
+            elif isinstance(item, tuple) and item and item[0] == "results":
+                _, session_dir, md = item
+                print("Results ready – fill in the form.")
+                autofill = build_autofill_with_names(md, root)
+                paths = sorted(session_dir.glob("*.png")) if session_dir else []
+                open_results_gui(root, paths, autofill)
+                print("Done.")
+            else:  # rückwärtskompatibel: reine Pfadliste
                 print("Results ready – fill in the form.")
                 open_results_gui(root, item)
                 print("Done.")

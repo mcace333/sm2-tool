@@ -14,6 +14,10 @@ env/
 
 # Screenshots / Output
 SM2_Results/
+chips.csv
+
+# Personal player mapping (in-game -> Discord)
+players.json
 
 # OS
 .DS_Store

@@ -20,4 +20,17 @@ if [ ! -d ".venv" ]; then
     .venv/bin/pip install -r requirements.txt
 fi
 
+# Selbstheilung: falls requirements.txt erweitert wurde (z. B. numpy/pytesseract
+# für die OCR-Auswertung), bei fehlenden Importen nachinstallieren.
+if ! .venv/bin/python3 -c "import numpy, pytesseract, PIL" 2>/dev/null; then
+    echo "Installiere/aktualisiere Abhängigkeiten..."
+    .venv/bin/pip install -r requirements.txt
+fi
+
+# tesseract-Binary ist ein System-Paket (kein pip) – nur für den OCR-Autofill nötig.
+if ! command -v tesseract >/dev/null 2>&1; then
+    echo "[WARN] tesseract nicht gefunden – OCR-Autofill (Namen/Gene-Seed/Chips) deaktiviert."
+    echo "       Installieren mit: sudo pacman -S tesseract tesseract-data-eng"
+fi
+
 .venv/bin/python3 sm2_tool.py "$@"

@@ -2,3 +2,9 @@ python-xlib>=0.33
 # mss und Pillow nur als Fallback wenn spectacle/scrot fehlen:
 mss>=10.0.0
 Pillow>=10.0.0
+
+# --- sm2_analyze.py (Rewards-Chip-Auswertung) ---
+numpy>=1.24.0
+pytesseract>=0.3.10
+# Zusätzlich nötig (System-Paket, kein pip):
+#   sudo pacman -S tesseract tesseract-data-eng
