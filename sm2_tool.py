@@ -6,7 +6,7 @@ reads mode/map/gene-seed/players/chips via OCR, and pre-fills a GUI that copies
 a ready-to-paste Discord post (with players as @discord) to the clipboard.
 """
 
-__version__ = "1.13"
+__version__ = "1.14"
 
 import os
 import queue
@@ -44,7 +44,7 @@ CAPTURE_SCALE    = 1.0     # Fraction of screen to capture (centered)
 TAB_SWITCH_PAUSE = 4.0     # Pause between tab switch and next screenshot (sec)
 INITIAL_PAUSE    = 2.0     # Pause before the first screenshot
 REWARD_ENTER_PAUSE = 3.0   # Pause before the second Enter (stats -> rewards)
-REWARD_SHOT_PAUSE  = 3.0   # Pause after the second Enter, before the rewards shot
+REWARD_SHOT_PAUSE  = 6.0   # Pause after the second Enter, before the rewards shot
 INITIAL_KEY      = "Return"  # Key pressed once at the start (open screen)
 TAB_KEY          = "e"       # Key for switching tabs between screenshots
 HOTKEYS          = ["Home", "End", "F7"]  # Keys that trigger the screenshot sequence

@@ -23,6 +23,7 @@ from __future__ import annotations
 import difflib
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,12 +55,17 @@ STAT_LABELS = ["SPECIAL KILLS", "MELEE", "RANGED", "INCAPACITAT",
                "REVIVED", "DAMAGE TAKEN", "ITEMS FOUND"]
 
 # Stat-Screen: Name- und Klassen-Zeile oben im rechten Panel.
-NAME_BOX  = (0.55, 0.212, 0.70, 0.252)
-CLASS_BOX = (0.55, 0.252, 0.70, 0.285)
+# Linke Kante bei 0.545, damit der erste Buchstabe des Namens nicht abgeschnitten
+# wird (sonst z. B. "McAce" -> "MICACe").
+NAME_BOX  = (0.545, 0.214, 0.70, 0.250)
+CLASS_BOX = (0.545, 0.252, 0.70, 0.285)
 
 # Victory-Screen: Missions-/Status-Kopfzeile (oben links) + Objective-Körper.
-TITLE_BOX  = (0.12, 0.048, 0.46, 0.086)
-STATUS_BOX = (0.10, 0.086, 0.42, 0.120)
+# TITLE_BOX breit genug für lange Maps (BALLISTIC ENGINE) und tief genug, dass
+# die Buchstaben nicht unten abgeschnitten werden; oben Abstand zum Discord-
+# Overlay. STATUS_BOX liegt direkt darunter ("STATUS: SUCCESS"/"WAVE n").
+TITLE_BOX  = (0.11, 0.068, 0.62, 0.106)
+STATUS_BOX = (0.11, 0.107, 0.45, 0.142)
 VICTORY_BODY = (0.30, 0.10, 0.72, 0.88)
 # Bereich, in dem Stat-Labels liegen (links der Wertespalten).
 STATLABEL_BOX = (0.45, 0.20, 0.78, 0.82)
@@ -87,6 +93,47 @@ def _prep_max(crop: Image.Image, up: int = 4, floor: int = 110) -> Image.Image:
     thr = max(floor, int(a.mean() + a.std()))
     b = Image.fromarray(((a > thr) * 255).astype(np.uint8))
     return b.resize((b.width * up, b.height * up))
+
+
+def _prep_red(crop: Image.Image, up: int = 4, floor: int = 22) -> Image.Image:
+    """Binarisieren auf der 'Röte' (R - max(G,B)): macht den roten Text des
+    DEFEAT-Screens sichtbar, den die Max-Kanal-Methode im dunkelroten Panel
+    nicht greift."""
+    a = np.asarray(crop.convert("RGB")).astype(int)
+    red = np.clip(a[:, :, 0] - np.maximum(a[:, :, 1], a[:, :, 2]), 0, 255).astype(np.uint8)
+    thr = max(floor, int(red.mean() + red.std()))
+    b = Image.fromarray(((red > thr) * 255).astype(np.uint8))
+    return b.resize((b.width * up, b.height * up))
+
+
+def _ocr_header(im: Image.Image, box, valid=None, psm: int = 7) -> str:
+    """Kopfzeile (Mission/Status) lesen – funktioniert für VICTORY (gold) und
+    DEFEAT (rot). Probiert beide Kanäle; mit `valid` wird das erste Ergebnis
+    genommen, das die Prüfung besteht (sonst der inhaltsreichere Kandidat)."""
+    region = _frac_crop(im, box)
+    cands = [
+        _ocr_line(_prep_max(region, floor=80), psm=psm),
+        _ocr_line(_prep_red(region), psm=psm),
+    ]
+    if valid:
+        for c in cands:
+            if valid(c):
+                return c
+    cands.sort(key=lambda s: len(re.sub(r"[^A-Za-z0-9]", "", s)), reverse=True)
+    return cands[0]
+
+
+def _status_has_result(s: str) -> bool:
+    s = s.upper()
+    return any(k in s for k in ("SUCCESS", "FAILURE", "WAVE"))
+
+
+def _mission_match(raw: str) -> str | None:
+    """Strikter Map-Match (oder None)."""
+    key = "".join(ch for ch in raw.upper() if ch.isalpha())
+    norm = {m.replace(" ", ""): m for m in MISSIONS}
+    m = difflib.get_close_matches(key, list(norm), n=1, cutoff=0.55)
+    return norm[m[0]] if m else None
 
 
 def _ocr_line(img: Image.Image, psm: int = 7, whitelist: str | None = None) -> str:
@@ -164,12 +211,15 @@ def classify_screen(im: Image.Image, chip_det: ChipDetector | None = None) -> st
     if sum(1 for k in STAT_LABELS if k in sl_txt) >= 2:
         return "stats"
 
-    # Victory: Objective-/Score-Panel.
+    # Ergebnis-Screen (VICTORY oder DEFEAT): primär über die STATUS-Zeile
+    # (SUCCESS / FAILURE / WAVE n) erkannt, sonst über Body-Anker.
+    if _status_has_result(_ocr_header(im, STATUS_BOX, valid=_status_has_result)):
+        return "victory"
     body_txt = pytesseract.image_to_string(
         _frac_crop(im, VICTORY_BODY).convert("L"), config="--psm 6").upper()
     if ("TOTAL SCORE" in body_txt or "BJECTI" in body_txt
-            or "VICTOR" in body_txt or "HONOUR" in body_txt
-            or "WAVE" in body_txt):
+            or "VICTOR" in body_txt or "DEFEAT" in body_txt
+            or "HONOUR" in body_txt or "WAVE" in body_txt):
         return "victory"
     return "other"
 
@@ -177,8 +227,13 @@ def classify_screen(im: Image.Image, chip_det: ChipDetector | None = None) -> st
 # ---------------------------------------------------------------------------
 # Extraktion je Screen-Typ
 # ---------------------------------------------------------------------------
+def _after_mission(title: str) -> str:
+    """Den Teil hinter dem 'MISSION'-Präfix der Titelzeile zurückgeben."""
+    parts = re.split(r"MISSION", title.upper())
+    return parts[-1] if len(parts) > 1 else title.upper()
+
+
 def extract_victory(im: Image.Image) -> dict:
-    import re
     body = _frac_crop(im, VICTORY_BODY).convert("L")
     txt = pytesseract.image_to_string(body, config="--psm 6")
     up = txt.upper()
@@ -189,15 +244,16 @@ def extract_victory(im: Image.Image) -> dict:
     low = txt.lower()
     out["geneseed"] = ("gene" in low and "seed" in low)
 
-    # Modus + Wave: primär aus der STATUS-Zeile ("STATUS: SUCCESS" / "WAVE 15").
-    status = _ocr_line(_prep_max(_frac_crop(im, STATUS_BOX)), psm=7).upper()
+    # Modus + Wave: primär aus der STATUS-Zeile ("STATUS: SUCCESS" / "WAVE 15"
+    # / "FAILURE"). Farb-robust (VICTORY gold, DEFEAT rot).
+    status = _ocr_header(im, STATUS_BOX, valid=_status_has_result).upper()
     m = re.search(r"WAVE\s*(\d+)", status) or re.search(r"WAVE\s*(\d+)", up)
     if m or "WAVE" in status or "WAVE" in up:
         out["mode"] = "siege"
         if m:
             out["wave"] = m.group(1)
     else:
-        # Victory-Screen ohne WAVE -> Operation (einziger anderer Modus).
+        # Ergebnis-Screen ohne WAVE -> Operation (einziger anderer Modus).
         out["mode"] = "operation"
 
     # Total Score (letzte längere Zahl im Text).
@@ -205,12 +261,12 @@ def extract_victory(im: Image.Image) -> dict:
     if nums:
         out["total_score"] = nums[-1]
 
-    # Map/Missionsname aus der Titelzeile, Fuzzy gegen bekannte Maps.
-    title = _ocr_line(_prep_max(_frac_crop(im, TITLE_BOX), floor=80), psm=7)
-    # "MISSION"-Präfix abtrennen, Rest matchen.
-    after = re.split(r"MISSION", title.upper())
-    cand = after[-1] if len(after) > 1 else title
-    out["mission"] = _fuzzy_mission(cand)
+    # Map/Missionsname aus der Titelzeile, strikt gegen bekannte Maps. Nur bei
+    # sicherem Treffer setzen – sonst leer lassen (z. B. wenn das Discord-Overlay
+    # den Titel überdeckt), damit nichts Falsches vorausgefüllt wird.
+    title = _ocr_header(im, TITLE_BOX,
+                        valid=lambda s: _mission_match(_after_mission(s)) is not None)
+    out["mission"] = _mission_match(_after_mission(title)) or ""
     return out
 
 
@@ -249,6 +305,12 @@ def analyze_match(folder: Path, chip_det: ChipDetector) -> MatchData:
     for p in images:
         im = Image.open(p).convert("RGB")
         kind = classify_screen(im, chip_det)
+        # Screenshots entstehen nur bei Victory in fester Reihenfolge:
+        # screenshot_1 ist IMMER der Ergebnis-Screen. Die OCR-Klassifizierung
+        # des Victory-Screens ist unzuverlässig (VICTORY/TOTAL SCORE werden oft
+        # verstümmelt), daher hier per Position erzwingen.
+        if p.stem.endswith("_1") and kind not in ("stats", "rewards"):
+            kind = "victory"
         if kind == "victory":
             v = extract_victory(im)
             md.mode = v["mode"] or md.mode
